@@ -107,7 +107,7 @@ RCT_EXPORT_METHOD(getEmail:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseR
 
 
 - (NSMutableDictionary *) emptyContactDict {
-  return [[NSMutableDictionary alloc] initWithObjects:@[@"", @"", @""] forKeys:@[@"name", @"phone", @"email"]];
+  return [[NSMutableDictionary alloc] initWithObjects:@[@"", @"", @"", @"", @"", @"", @""] forKeys:@[@"name", @"phone", @"email", @"street", @"postalCode", @"city", @"country"]];
 }
 
 /**
@@ -135,6 +135,8 @@ RCT_EXPORT_METHOD(getEmail:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseR
       NSString *fullName = [self getFullNameForFirst:contact.givenName middle:contact.middleName last:contact.familyName ];
       NSArray *phoneNos = contact.phoneNumbers;
       NSArray *emailAddresses = contact.emailAddresses;
+      NSArray *postalAddresses = contact.postalAddresses;
+      
       
       //Return full name
       [contactData setValue:fullName forKey:@"name"];
@@ -149,7 +151,15 @@ RCT_EXPORT_METHOD(getEmail:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseR
       if([emailAddresses count] > 0) {
         [contactData setValue:((CNLabeledValue *)emailAddresses[0]).value forKey:@"email"];
       }
-      
+
+      //Return first postal address
+      if([postalAddresses count] > 0) {
+        [contactData setValue:((CNPostalAddress* )((CNLabeledValue *)postalAddresses[0]).value).street forKey:@"street"];
+        [contactData setValue:((CNPostalAddress* )((CNLabeledValue *)postalAddresses[0]).value).postalCode forKey:@"postalCode"];
+        [contactData setValue:((CNPostalAddress* )((CNLabeledValue *)postalAddresses[0]).value).city forKey:@"city"];
+        [contactData setValue:((CNPostalAddress* )((CNLabeledValue *)postalAddresses[0]).value).country forKey:@"country"];
+      }
+
       [self contactPicked:contactData];
     }
       break;

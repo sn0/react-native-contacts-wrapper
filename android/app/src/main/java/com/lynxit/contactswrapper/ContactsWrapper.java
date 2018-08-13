@@ -1,12 +1,16 @@
 package com.lynxit.contactswrapper;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.ContactsContract;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 
 import java.net.URI;
@@ -34,12 +38,14 @@ public class ContactsWrapper extends ReactContextBaseJavaModule implements Activ
 
     private static final int CONTACT_REQUEST = 1;
     private static final int EMAIL_REQUEST = 2;
+    private static final int PERMISSIONS_REQUEST_READ_CONTACTS = 3;
     public static final String E_CONTACT_CANCELLED = "E_CONTACT_CANCELLED";
     public static final String E_CONTACT_NO_DATA = "E_CONTACT_NO_DATA";
     public static final String E_CONTACT_NO_EMAIL = "E_CONTACT_NO_EMAIL";
     public static final String E_CONTACT_EXCEPTION = "E_CONTACT_EXCEPTION";
     public static final String E_CONTACT_PERMISSION = "E_CONTACT_PERMISSION";
     private Promise mContactsPromise;
+    private int mRequestCode = -1;
     private Activity mCtx;
     private final ContentResolver contentResolver;
     private static final List<String> JUST_ME_PROJECTION = new ArrayList<String>() {{
@@ -89,27 +95,51 @@ public class ContactsWrapper extends ReactContextBaseJavaModule implements Activ
      * @param requestCode - request code to specify what contact data to return
      */
     private void launchPicker(Promise contactsPromise, int requestCode) {
-//        this.contentResolver.query(Uri.parse("content://com.android.contacts/contacts/lookup/0r3-A7416BA07AEA92F2/3"), null, null, null, null);
+        mContactsPromise = contactsPromise;
+        mRequestCode = requestCode;
+
+        if (ContextCompat.checkSelfPermission(this.getReactApplicationContext(),
+                Manifest.permission.READ_CONTACTS)
+                != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this.getCurrentActivity(),
+                    new String[]{Manifest.permission.READ_CONTACTS},
+                    PERMISSIONS_REQUEST_READ_CONTACTS);
+        } else {
+            requestContact();
+        }
+    }
+
+    public void requestContact() {
         Cursor cursor = this.contentResolver.query(ContactsContract.Contacts.CONTENT_URI, null, null, null, null);
-        if (cursor != null) {
-            mContactsPromise = contactsPromise;
+        if (cursor != null && mContactsPromise != null) {
             Intent intent = new Intent(Intent.ACTION_PICK);
             intent.setType(ContactsContract.Contacts.CONTENT_TYPE);
             mCtx = getCurrentActivity();
             if (intent.resolveActivity(mCtx.getPackageManager()) != null) {
-                mCtx.startActivityForResult(intent, requestCode);
+                mCtx.startActivityForResult(intent, mRequestCode);
             }
             cursor.close();
-        }else{
+        } else {
             mContactsPromise.reject(E_CONTACT_PERMISSION, "no permission");
+        }
+    }
+
+    public static void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case PERMISSIONS_REQUEST_READ_CONTACTS: {
+                if (grantResults.length > 0  && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    // TODO: re-request permission
+                }
+                return;
+            }
         }
     }
 
     @Override
     public void onActivityResult(Activity ContactsWrapper, final int requestCode, final int resultCode, final Intent intent) {
 
-        if(mContactsPromise == null || mCtx == null
-              || (requestCode != CONTACT_REQUEST && requestCode != EMAIL_REQUEST)){
+        if(mContactsPromise == null || mCtx == null || (requestCode != CONTACT_REQUEST && requestCode != EMAIL_REQUEST)){
           return;
         }
 
@@ -157,6 +187,7 @@ public class ContactsWrapper extends ReactContextBaseJavaModule implements Activ
                             returnKeys.put(ContactsContract.CommonDataKinds.StructuredName.CONTENT_ITEM_TYPE, "name");
                             returnKeys.put(ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE, "phone");
                             returnKeys.put(ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE, "email");
+                            returnKeys.put(ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_ITEM_TYPE, "postal");
 
                             int dataIdx = cursor.getColumnIndex(ContactsContract.Contacts.Entity.DATA1);
                             int mimeIdx = cursor.getColumnIndex(ContactsContract.Contacts.Entity.MIMETYPE);
@@ -164,7 +195,23 @@ public class ContactsWrapper extends ReactContextBaseJavaModule implements Activ
                                 do {
                                     mime = cursor.getString(mimeIdx);
                                     if(returnKeys.containsKey(mime)) {
-                                        contactData.putString((String) returnKeys.get(mime), cursor.getString(dataIdx));
+                                        if (returnKeys.get(mime) == "postal") {
+                                            String[] address = cursor.getString(dataIdx).split("\\n");
+                                            if (address.length>0) {
+                                                contactData.putString("street", address[0]);
+                                            }
+                                            if (address.length>1) {
+                                                String[] postal = address[1].split(" ");
+                                                if (postal.length>0) {
+                                                    contactData.putString("postalCode", postal[0]);
+                                                }
+                                                if (postal.length>1) {
+                                                    contactData.putString("city", postal[1]);
+                                                }
+                                            }
+                                        } else {
+                                            contactData.putString((String) returnKeys.get(mime), cursor.getString(dataIdx));
+                                        }
                                         foundData = true;
                                     }
                                 } while (cursor.moveToNext());
@@ -225,6 +272,7 @@ public class ContactsWrapper extends ReactContextBaseJavaModule implements Activ
         }
     }
 
+    @Override
     public void onNewIntent(Intent intent) {
 
     }
